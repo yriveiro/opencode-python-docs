@@ -1,0 +1,38 @@
+# Commit Message Template
+# 
+# Format: <type>(<scope>): <subject>
+# 
+# Types:
+#   feat     - New feature
+#   fix      - Bug fix
+#   docs     - Documentation changes
+#   style    - Formatting, missing semicolons, etc
+#   refactor - Code refactoring
+#   perf     - Performance improvements
+#   test     - Adding or updating tests
+#   chore    - Build process, dependencies, etc
+#
+# Scope: optional, describes area of change (e.g., fetch_python_doc)
+#
+# Subject: brief description (imperative mood, no period)
+
+# Body (separated by blank line):
+# - Explain WHAT and WHY (not HOW)
+# - Wrap at 72 characters
+# - Use bullet points for multiple changes
+
+# Footer (optional):
+# - Reference issues: Closes #123, Fixes #456
+# - Breaking changes: BREAKING CHANGE: description
+
+# Example:
+# feat(fetch_python_doc): add offset/limit pagination
+#
+# Add offset and limit parameters to enable windowing of large
+# documentation responses. This allows agents to lazy load content
+# in chunks while respecting context caps.
+#
+# - Add offset parameter (default: 0) for character offset
+# - Add limit parameter (default: 12000) for max characters
+# - Update formatDocument() to window content with progress indicators
+# - Document lazy loading usage patterns in README
