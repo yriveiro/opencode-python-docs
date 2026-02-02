@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 import { CacheManager, type CacheManagerInterface } from "../src/testing";
@@ -88,6 +88,23 @@ describe("CacheManager", () => {
       expect(stats.scanned).toBe(0);
       expect(stats.deleted).toBe(0);
       expect(stats.errors).toBe(0);
+    });
+
+    it("should delete expired files", () => {
+      const testIndexPath = cache.getIndexPath("3.12");
+      const testDocPath = cache.getDocPath("3.12", "test");
+      cache.write(testIndexPath, { entries: [] });
+      cache.write(testDocPath, { markdown: "# test", anchorIndex: [], fetchedAt: Date.now() });
+
+      // Set mtime to 2 days ago (longer than any TTL)
+      const oldTime = Date.now() - 2 * 24 * 60 * 60 * 1000;
+      utimesSync(testIndexPath, new Date(oldTime), new Date(oldTime));
+      utimesSync(testDocPath, new Date(oldTime), new Date(oldTime));
+
+      const stats = cache.runGarbageCollection(1000, 1000); // 1 second TTL
+      expect(stats.deleted).toBe(2);
+      expect(existsSync(testIndexPath)).toBe(false);
+      expect(existsSync(testDocPath)).toBe(false);
     });
   });
 });

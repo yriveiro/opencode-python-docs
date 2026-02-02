@@ -70,6 +70,7 @@ fetch_python_doc path="library/asyncio" offset=5000 limit=5000
 - **Doc cache**: 7 days TTL
 - **Location**: `~/.cache/opencode/python-docs/`
 - **Garbage collection**: Runs on startup and server reconnect
+- **Schema-aware invalidation**: Cached docs missing required fields (e.g., anchor index) are refetched even within TTL
 
 ## Development
 
