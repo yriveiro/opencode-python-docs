@@ -5,6 +5,7 @@ import { createDocService } from "../src/testing";
 describe("DocService", () => {
   const mockCache: CacheManagerInterface = {
     getIndexPath: mock(() => "/mock/index.json"),
+    getSearchIndexPath: mock(() => "/mock/search-index.json"),
     getDocPath: mock(() => "/mock/doc.json"),
     isValid: mock(),
     read: mock(),
@@ -14,6 +15,7 @@ describe("DocService", () => {
 
   const mockLogger: Logger = {
     info: mock(),
+    warn: mock(),
     error: mock(),
   };
 

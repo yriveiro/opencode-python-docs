@@ -1,3 +1,4 @@
+import type { TypeInferenceResult } from "./search-index";
 import type { AnchorIndex, DocEntry } from "./types";
 
 /**
@@ -5,20 +6,46 @@ import type { AnchorIndex, DocEntry } from "./types";
  * @param results - Matched documentation entries.
  * @param query - The original search query.
  * @param version - Python version searched.
+ * @param fallbackUsed - Whether type inference fallback was used.
+ * @param typeInference - Type inference result when fallback was used.
  * @returns Formatted string listing results or a no-results message.
  */
-export function formatSearchResults(results: DocEntry[], query: string, version: string): string {
+export function formatSearchResults(
+  results: DocEntry[],
+  query: string,
+  version: string,
+  fallbackUsed?: boolean,
+  typeInference?: TypeInferenceResult,
+): string {
   if (!results.length) {
-    return `No results found for "${query}" in Python ${version} docs.`;
+    let message = `No results found for "${query}" in Python ${version} docs.`;
+    if (typeInference && typeInference.inferredTypes.length > 0) {
+      message += `\n\nSuggested types based on your query:\n`;
+      message += typeInference.inferredTypes.map((t) => `  - ${t}`).join("\n");
+      if (typeInference.alternativeTypes.length > 0) {
+        message += `\n\nAlternative types:\n`;
+        message += typeInference.alternativeTypes.map((t) => `  - ${t}`).join("\n");
+      }
+    }
+    return message;
   }
 
-  return [
+  const lines: string[] = [
     `Found ${results.length} result(s) for "${query}" in Python ${version} docs.`,
-    "",
-    ...results.map((r) => `- ${r.name} [${r.type}] -> ${r.path}`),
-    "",
-    "Use fetch_python_doc with the path to get the full documentation.",
-  ].join("\n");
+  ];
+
+  if (fallbackUsed && typeInference) {
+    lines.push("");
+    lines.push("⚠️ Original search returned no results. Used type inference to find matches.");
+    lines.push(`   Inferred types: ${typeInference.inferredTypes.join(", ")}`);
+  }
+
+  lines.push("");
+  lines.push(...results.map((r) => `- ${r.name} [${r.type}] -> ${r.path}`));
+  lines.push("");
+  lines.push("Use fetch_python_doc with the path to get the full documentation.");
+
+  return lines.join("\n");
 }
 
 /**

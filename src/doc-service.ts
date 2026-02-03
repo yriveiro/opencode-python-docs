@@ -3,6 +3,13 @@ import type { PythonVersion } from "./config";
 import { CONFIG } from "./config";
 import { htmlToMarkdown } from "./html-to-markdown";
 import type { Logger } from "./logger";
+import {
+  createSearchIndex,
+  getAvailableTypes,
+  inferTypesForQuery,
+  type SearchIndex,
+  type TypeInferenceResult,
+} from "./search-index";
 import type { CachedDoc, DocIndex, FetchedDoc } from "./types";
 
 async function fetchWithTimeout(url: string, log: Logger): Promise<string> {
@@ -25,8 +32,22 @@ async function fetchWithTimeout(url: string, log: Logger): Promise<string> {
 /** Service for fetching and searching Python documentation. */
 export interface DocService {
   getIndex(version: PythonVersion): Promise<DocIndex>;
+  getSearchIndex(version: PythonVersion): Promise<SearchIndex>;
   getDoc(version: PythonVersion, path: string): Promise<FetchedDoc>;
   search(index: DocIndex, query: string, type?: string, limit?: number): DocIndex["entries"];
+  searchWithFallback(
+    index: DocIndex,
+    searchIndex: SearchIndex,
+    query: string,
+    type?: string,
+    limit?: number,
+  ): Promise<{
+    results: DocIndex["entries"];
+    fallbackUsed: boolean;
+    typeInference?: TypeInferenceResult;
+  }>;
+  suggestTypes(searchIndex: SearchIndex, query: string): TypeInferenceResult;
+  getAvailableTypes(searchIndex: SearchIndex): string[];
 }
 
 /**
@@ -49,6 +70,32 @@ export function createDocService(cache: CacheManagerInterface, log: Logger): Doc
       const index = JSON.parse(text) as DocIndex;
       cache.write(indexPath, index);
       return index;
+    },
+
+    async getSearchIndex(version: PythonVersion): Promise<SearchIndex> {
+      const searchIndexPath = cache.getSearchIndexPath(version);
+
+      // Check if we have a valid cached search index
+      if (cache.isValid(searchIndexPath, CONFIG.indexTtlMs)) {
+        const cached = cache.read<SearchIndex>(searchIndexPath);
+        if (cached) {
+          await log.info(`Using cached search index for Python ${version}`);
+          return cached;
+        }
+      }
+
+      // Build search index from the main index
+      await log.info(`Building search index for Python ${version}...`);
+      const index = await this.getIndex(version);
+      const searchIndex = createSearchIndex(index, version);
+
+      // Cache the search index
+      cache.write(searchIndexPath, searchIndex);
+      await log.info(
+        `Cached search index with ${searchIndex.keywordMappings.length} keyword mappings`,
+      );
+
+      return searchIndex;
     },
 
     async getDoc(version: PythonVersion, path: string): Promise<FetchedDoc> {
@@ -89,7 +136,7 @@ export function createDocService(cache: CacheManagerInterface, log: Logger): Doc
         if (results.length >= maxResults) break;
 
         const nameMatch = entry.name.toLowerCase().includes(q);
-        const typeMatch = !t || entry.type.toLowerCase().includes(t);
+        const typeMatch = !t || entry.type.toLowerCase() === t;
 
         if (nameMatch && typeMatch) {
           results.push(entry);
@@ -97,6 +144,72 @@ export function createDocService(cache: CacheManagerInterface, log: Logger): Doc
       }
 
       return results;
+    },
+
+    async searchWithFallback(
+      index: DocIndex,
+      searchIndex: SearchIndex,
+      query: string,
+      type?: string,
+      limit?: number,
+    ): Promise<{
+      results: DocIndex["entries"];
+      fallbackUsed: boolean;
+      typeInference?: TypeInferenceResult;
+    }> {
+      // Try the requested search first
+      const results = this.search(index, query, type, limit);
+
+      // If we have results or no type filter, return as-is
+      if (results.length > 0 || !type) {
+        return { results, fallbackUsed: false };
+      }
+
+      // No results with type filter - use type inference to suggest alternatives
+      await log.info(`No results for "${query}" with type "${type}". Running type inference...`);
+
+      const typeInference = inferTypesForQuery(query, searchIndex);
+
+      // Try searching without the type filter
+      const resultsNoFilter = this.search(index, query, undefined, limit);
+
+      // Try searching with the most likely inferred types
+      let resultsWithInferred: DocIndex["entries"] = [];
+      for (const inferredType of typeInference.inferredTypes.slice(0, 2)) {
+        const inferredResults = this.search(
+          index,
+          query,
+          inferredType,
+          Math.ceil((limit ?? CONFIG.defaultLimit) / 2),
+        );
+        resultsWithInferred = resultsWithInferred.concat(inferredResults);
+      }
+
+      // Combine results: prioritize inferred type matches, then no-filter matches
+      const seen = new Set<string>();
+      const combinedResults: DocIndex["entries"] = [];
+
+      for (const entry of resultsWithInferred.concat(resultsNoFilter)) {
+        if (!seen.has(entry.path)) {
+          seen.add(entry.path);
+          combinedResults.push(entry);
+          if (combinedResults.length >= (limit ?? CONFIG.defaultLimit)) break;
+        }
+      }
+
+      return {
+        results: combinedResults,
+        fallbackUsed: true,
+        typeInference,
+      };
+    },
+
+    suggestTypes(searchIndex: SearchIndex, query: string): TypeInferenceResult {
+      return inferTypesForQuery(query, searchIndex);
+    },
+
+    getAvailableTypes(searchIndex: SearchIndex): string[] {
+      return getAvailableTypes(searchIndex);
     },
   };
 }

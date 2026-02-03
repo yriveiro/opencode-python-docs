@@ -13,6 +13,7 @@ import { dirname, join } from "node:path";
 /** Interface for cache operations, enabling dependency injection in tests. */
 export interface CacheManagerInterface {
   getIndexPath(version: string): string;
+  getSearchIndexPath(version: string): string;
   getDocPath(version: string, docPath: string): string;
   isValid(path: string, ttlMs: number): boolean;
   read<T>(path: string): T | null;
@@ -41,6 +42,10 @@ export function CacheManager(cacheRoot: string): CacheManagerInterface {
   return {
     getIndexPath(version: string): string {
       return join(cacheRoot, `python-${version}.json`);
+    },
+
+    getSearchIndexPath(version: string): string {
+      return join(cacheRoot, `python-${version}-search-index.json`);
     },
 
     getDocPath(version: string, docPath: string): string {
